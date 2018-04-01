@@ -8,8 +8,10 @@
 
 #Python
 import numpy as np
-import ConfigParser
-from matplotlib import pyplot as plt
+import configparser
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 #Keras
 from keras.models import model_from_json
 from keras.models import Model
@@ -37,7 +39,7 @@ from pre_processing import my_PreProc
 
 
 #========= CONFIG FILE TO READ FROM =======
-config = ConfigParser.RawConfigParser()
+config = configparser.RawConfigParser()
 config.read('configuration.txt')
 #===========================================
 #run the training on invariant or local
@@ -83,11 +85,13 @@ patches_imgs_test = None
 new_height = None
 new_width = None
 masks_test  = None
+scndmasks_test = None
 patches_masks_test = None
 if average_mode == True:
-    patches_imgs_test, new_height, new_width, masks_test = get_data_testing_overlap(
+    patches_imgs_test, new_height, new_width, masks_test, scndmasks_test = get_data_testing_overlap(
         DRIVE_test_imgs_original = DRIVE_test_imgs_original,  #original
         DRIVE_test_groudTruth = path_data + config.get('data paths', 'test_groundTruth'),  #masks
+        DRIVE_test_scndgroudTruth = path_data + config.get('data paths', 'test_2ndgroundTruth'),  #second segmentation masks
         Imgs_to_test = int(config.get('testing settings', 'full_images_to_test')),
         patch_height = patch_height,
         patch_width = patch_width,
@@ -95,9 +99,10 @@ if average_mode == True:
         stride_width = stride_width
     )
 else:
-    patches_imgs_test, patches_masks_test = get_data_testing(
+    patches_imgs_test, patches_masks_test,patches_scndmasks_test = get_data_testing(
         DRIVE_test_imgs_original = DRIVE_test_imgs_original,  #original
         DRIVE_test_groudTruth = path_data + config.get('data paths', 'test_groundTruth'),  #masks
+        DRIVE_test_scndgroudTruth = path_data + config.get('data paths', 'test_2ndgroundTruth'),  #second segmentation masks
         Imgs_to_test = int(config.get('testing settings', 'full_images_to_test')),
         patch_height = patch_height,
         patch_width = patch_width,
@@ -112,8 +117,8 @@ model = model_from_json(open(path_experiment+name_experiment +'_architecture.jso
 model.load_weights(path_experiment+name_experiment + '_'+best_last+'_weights.h5')
 #Calculate the predictions
 predictions = model.predict(patches_imgs_test, batch_size=32, verbose=2)
-print "predicted images size :"
-print predictions.shape
+print("predicted images size :")
+print(predictions.shape)
 
 #===== Convert the prediction arrays in corresponding images
 pred_patches = pred_to_imgs(predictions, patch_height, patch_width, "original")
@@ -128,117 +133,217 @@ if average_mode == True:
     pred_imgs = recompone_overlap(pred_patches, new_height, new_width, stride_height, stride_width)# predictions
     orig_imgs = my_PreProc(test_imgs_orig[0:pred_imgs.shape[0],:,:,:])    #originals
     gtruth_masks = masks_test  #ground truth masks
+    scndgtruth_masks = scndmasks_test   #second ground truth masks
 else:
     pred_imgs = recompone(pred_patches,13,12)       # predictions
     orig_imgs = recompone(patches_imgs_test,13,12)  # originals
     gtruth_masks = recompone(patches_masks_test,13,12)  #masks
+    scndgtruth_masks = recompone(patches_scndmasks_test,13,12)
 # apply the DRIVE masks on the repdictions #set everything outside the FOV to zero!!
 kill_border(pred_imgs, test_border_masks)  #DRIVE MASK  #only for visualization
 ## back to original dimensions
 orig_imgs = orig_imgs[:,:,0:full_img_height,0:full_img_width]
 pred_imgs = pred_imgs[:,:,0:full_img_height,0:full_img_width]
 gtruth_masks = gtruth_masks[:,:,0:full_img_height,0:full_img_width]
-print "Orig imgs shape: " +str(orig_imgs.shape)
-print "pred imgs shape: " +str(pred_imgs.shape)
-print "Gtruth imgs shape: " +str(gtruth_masks.shape)
-visualize(group_images(orig_imgs,N_visual),path_experiment+"all_originals")#.show()
-visualize(group_images(pred_imgs,N_visual),path_experiment+"all_predictions")#.show()
-visualize(group_images(gtruth_masks,N_visual),path_experiment+"all_groundTruths")#.show()
+scndgtruth_masks = scndgtruth_masks[:,:,0:full_img_height,0:full_img_width]
+
+print("Orig imgs shape: " +str(orig_imgs.shape))
+print("pred imgs shape: " +str(pred_imgs.shape))
+print("Gtruth imgs shape: " +str(gtruth_masks.shape))
+print("Second Gtruth imgs shape: " +str(scndgtruth_masks.shape))
+visualize(group_images(orig_imgs,N_visual),path_experiment+"all_originals")
+visualize(group_images(pred_imgs,N_visual),path_experiment+"all_predictions")
+visualize(group_images(gtruth_masks,N_visual),path_experiment+"all_groundTruths")
+visualize(group_images(scndgtruth_masks,N_visual),path_experiment+"all_second groundTruths")
+
 #visualize results comparing mask and prediction:
-assert (orig_imgs.shape[0]==pred_imgs.shape[0] and orig_imgs.shape[0]==gtruth_masks.shape[0])
+assert (orig_imgs.shape[0]==pred_imgs.shape[0] and orig_imgs.shape[0]==gtruth_masks.shape[0] and orig_imgs.shape[0]==scndgtruth_masks.shape[0])
 N_predicted = orig_imgs.shape[0]
 group = N_visual
 assert (N_predicted%group==0)
 for i in range(int(N_predicted/group)):
     orig_stripe = group_images(orig_imgs[i*group:(i*group)+group,:,:,:],group)
     masks_stripe = group_images(gtruth_masks[i*group:(i*group)+group,:,:,:],group)
+    scndmasks_stripe = group_images(scndgtruth_masks[i*group:(i*group)+group,:,:,:],group)
     pred_stripe = group_images(pred_imgs[i*group:(i*group)+group,:,:,:],group)
-    total_img = np.concatenate((orig_stripe,masks_stripe,pred_stripe),axis=0)
-    visualize(total_img,path_experiment+name_experiment +"_Original_GroundTruth_Prediction"+str(i))#.show()
-
+    total_img = np.concatenate((orig_stripe,masks_stripe,scndmasks_stripe,pred_stripe),axis=1)
+    total_imgGroundTruth = np.concatenate((orig_stripe,masks_stripe,pred_stripe),axis=1)
+    visualize(total_imgGroundTruth,path_experiment+name_experiment +"_Original_GroundTruth_Prediction"+str(i))
+    visualize(total_img, path_experiment + name_experiment + "_Original_GroundTruth_SecondTest_Prediction" + str(i))
 
 #====== Evaluate the results
-print "\n\n========  Evaluate the results ======================="
+print("\n\n========  Evaluate the results =======================")
 #predictions only inside the FOV
 y_scores, y_true = pred_only_FOV(pred_imgs,gtruth_masks, test_border_masks)  #returns data only inside the FOV
-print "Calculating results only inside the FOV:"
-print "y scores pixels: " +str(y_scores.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(pred_imgs.shape[0]*pred_imgs.shape[2]*pred_imgs.shape[3]) +" (584*565==329960)"
-print "y true pixels: " +str(y_true.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(gtruth_masks.shape[2]*gtruth_masks.shape[3]*gtruth_masks.shape[0])+" (584*565==329960)"
+print("Calculating results only inside the FOV using the first segmentation:")
+print("y scores pixels: " +str(y_scores.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(pred_imgs.shape[0]*pred_imgs.shape[2]*pred_imgs.shape[3]) +" (584*565==329960)")
+print("y true pixels: " +str(y_true.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(gtruth_masks.shape[2]*gtruth_masks.shape[3]*gtruth_masks.shape[0])+" (584*565==329960)")
+
+scnd_y_scores, scnd_y_true = pred_only_FOV(pred_imgs,scndgtruth_masks, test_border_masks)  #returns data only inside the FOV using the second segmentation
+print("Calculating results only inside the FOV using the second segmentation:")
+print("y scores pixels: " +str(scnd_y_scores.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(pred_imgs.shape[0]*pred_imgs.shape[2]*pred_imgs.shape[3]) +" (584*565==329960)")
+print("y true pixels: " +str(scnd_y_true.shape[0]) +" (radius 270: 270*270*3.14==228906), including background around retina: " +str(scndgtruth_masks.shape[2]*scndgtruth_masks.shape[3]*scndgtruth_masks.shape[0])+" (584*565==329960)")
+
 
 #Area under the ROC curve
 fpr, tpr, thresholds = roc_curve((y_true), y_scores)
 AUC_ROC = roc_auc_score(y_true, y_scores)
+
+scnd_fpr, scnd_tpr, scnd_thresholds = roc_curve((scnd_y_true), scnd_y_scores)
+scnd_AUC_ROC = roc_auc_score(scnd_y_true, scnd_y_scores)
+
 # test_integral = np.trapz(tpr,fpr) #trapz is numpy integration
-print "\nArea under the ROC curve: " +str(AUC_ROC)
+print ("\nArea under the ROC curve using the first segmentation: " +str(AUC_ROC))
 roc_curve =plt.figure()
 plt.plot(fpr,tpr,'-',label='Area Under the Curve (AUC = %0.4f)' % AUC_ROC)
-plt.title('ROC curve')
+plt.title('ROC curve with the first segmentation')
 plt.xlabel("FPR (False Positive Rate)")
 plt.ylabel("TPR (True Positive Rate)")
 plt.legend(loc="lower right")
-plt.savefig(path_experiment+"ROC.png")
+plt.savefig(path_experiment+"ROC-1stseg.png")
+
+# test_integral = np.trapz(tpr,fpr) #trapz is numpy integration
+print ("\nArea under the ROC curve using the second segmentation: " +str(scnd_AUC_ROC))
+roc_curve =plt.figure()
+plt.plot(scnd_fpr,scnd_tpr,'-',label='Area Under the Curve (AUC = %0.4f)' % scnd_AUC_ROC)
+plt.title('ROC curve with second segmentation')
+plt.xlabel("FPR (False Positive Rate)")
+plt.ylabel("TPR (True Positive Rate)")
+plt.legend(loc="lower right")
+plt.savefig(path_experiment+"ROC2ndseg.png")
 
 #Precision-recall curve
 precision, recall, thresholds = precision_recall_curve(y_true, y_scores)
 precision = np.fliplr([precision])[0]  #so the array is increasing (you won't get negative AUC)
 recall = np.fliplr([recall])[0]  #so the array is increasing (you won't get negative AUC)
 AUC_prec_rec = np.trapz(precision,recall)
-print "\nArea under Precision-Recall curve: " +str(AUC_prec_rec)
+print("\nArea under Precision-Recall curve: " +str(AUC_prec_rec))
 prec_rec_curve = plt.figure()
 plt.plot(recall,precision,'-',label='Area Under the Curve (AUC = %0.4f)' % AUC_prec_rec)
-plt.title('Precision - Recall curve')
+plt.title('Precision - Recall curve using first segmentation')
 plt.xlabel("Recall")
 plt.ylabel("Precision")
 plt.legend(loc="lower right")
-plt.savefig(path_experiment+"Precision_recall.png")
+plt.savefig(path_experiment+"Precision_recall_1stseg.png")
+
+scnd_precision, scnd_recall, scnd_thresholds = precision_recall_curve(scnd_y_true, scnd_y_scores)
+scnd_precision = np.fliplr([precision])[0]  #so the array is increasing (you won't get negative AUC)
+scnd_recall = np.fliplr([recall])[0]  #so the array is increasing (you won't get negative AUC)
+scnd_AUC_prec_rec = np.trapz(precision,recall)
+print("\nArea under Precision-Recall curve: " +str(scnd_AUC_prec_rec))
+prec_rec_curve = plt.figure()
+plt.plot(recall,precision,'-',label='Area Under the Curve (AUC = %0.4f)' % scnd_AUC_prec_rec)
+plt.title('Precision - Recall curve using second segmentation')
+plt.xlabel("Recall")
+plt.ylabel("Precision")
+plt.legend(loc="lower right")
+plt.savefig(path_experiment+"Precision_recall_2ndseg.png")
+
 
 #Confusion matrix
-threshold_confusion = 0.5
-print "\nConfusion matrix:  Costum threshold (for positive) of " +str(threshold_confusion)
+threshold_confusion = 0.5 # rounding off numbers
+print ("\nConfusion matrix:  Custom threshold (for positive) of " +str(threshold_confusion))
 y_pred = np.empty((y_scores.shape[0]))
 for i in range(y_scores.shape[0]):
-    if y_scores[i]>=threshold_confusion:
-        y_pred[i]=1
-    else:
-        y_pred[i]=0
+   if y_scores[i]>=threshold_confusion:
+       y_pred[i]=1
+   else:
+       y_pred[i]=0
+   # y_pred[i] = round(y_pred[i])
+
+scnd_y_pred = np.empty((scnd_y_scores.shape[0]))
+for i in range(scnd_y_scores.shape[0]):
+   if y_scores[i]>=threshold_confusion:
+       scnd_y_pred[i]=1
+   else:
+       scnd_y_pred[i]=0
+   # scnd_y_pred[i] = round(scnd_y_pred[i])
+
+
 confusion = confusion_matrix(y_true, y_pred)
-print confusion
+print(confusion)
 accuracy = 0
 if float(np.sum(confusion))!=0:
     accuracy = float(confusion[0,0]+confusion[1,1])/float(np.sum(confusion))
-print "Global Accuracy: " +str(accuracy)
+print("Global Accuracy with 1st segmentation: " +str(accuracy))
 specificity = 0
 if float(confusion[0,0]+confusion[0,1])!=0:
     specificity = float(confusion[0,0])/float(confusion[0,0]+confusion[0,1])
-print "Specificity: " +str(specificity)
+print("Specificity: " +str(specificity))
 sensitivity = 0
 if float(confusion[1,1]+confusion[1,0])!=0:
     sensitivity = float(confusion[1,1])/float(confusion[1,1]+confusion[1,0])
-print "Sensitivity: " +str(sensitivity)
+print("Sensitivity: " +str(sensitivity))
 precision = 0
 if float(confusion[1,1]+confusion[0,1])!=0:
     precision = float(confusion[1,1])/float(confusion[1,1]+confusion[0,1])
-print "Precision: " +str(precision)
+print("Precision: " +str(precision))
+
+scnd_confusion = confusion_matrix(scnd_y_true, scnd_y_pred)
+print(scnd_confusion)
+scnd_accuracy = 0
+if float(np.sum(scnd_confusion))!=0:
+    scnd_accuracy = float(scnd_confusion[0,0]+scnd_confusion[1,1])/float(np.sum(scnd_confusion))
+print("Global Accuracy with 2nd segmentation: " +str(scnd_accuracy))
+scnd_specificity = 0
+if float(confusion[0,0]+confusion[0,1])!=0:
+    scnd_specificity = float(scnd_confusion[0,0])/float(scnd_confusion[0,0]+scnd_confusion[0,1])
+print("Specificity: " +str(scnd_specificity))
+
+
+scnd_sensitivity = 0
+if float(scnd_confusion[1,1]+scnd_confusion[1,0])!=0:
+    scnd_sensitivity = float(scnd_confusion[1,1])/float(scnd_confusion[1,1]+scnd_confusion[1,0])
+print("Sensitivity: " +str(scnd_sensitivity))
+scnd_precision = 0
+if float(scnd_confusion[1,1]+scnd_confusion[0,1])!=0:
+    scnd_precision = float(scnd_confusion[1,1])/float(scnd_confusion[1,1]+scnd_confusion[0,1])
+print("Precision: " +str(scnd_precision))
 
 #Jaccard similarity index
 jaccard_index = jaccard_similarity_score(y_true, y_pred, normalize=True)
-print "\nJaccard similarity score: " +str(jaccard_index)
+print("\nJaccard similarity score with 1st segmentation: " +str(jaccard_index))
+scnd_jaccard_index = jaccard_similarity_score(scnd_y_true, scnd_y_pred, normalize=True)
+print("\nJaccard similarity score with the 2nd segmentation: " +str(scnd_jaccard_index))
+
+#Dice similarity score
+dice_coefficient = 2*float(confusion[1,1])/(2*float(confusion[1,1])+float(confusion[0,1]+confusion[1,0]))
+print("\nDice similarity score with 1st segmentation: " +str(dice_coefficient))
+scnd_dice_coefficient = 2*float(scnd_confusion[1,1])/(2*float(scnd_confusion[1,1])+float(scnd_confusion[0,1]+scnd_confusion[1,0]))
+print("\nDice similarity score with the 2nd segmentation: " +str(scnd_dice_coefficient))
 
 #F1 score
 F1_score = f1_score(y_true, y_pred, labels=None, average='binary', sample_weight=None)
-print "\nF1 score (F-measure): " +str(F1_score)
-
+print("\nF1 score (F-measure) with 1st segmentation: " +str(F1_score))
+scnd_F1_score = f1_score(scnd_y_true, scnd_y_pred, labels=None, average='binary', sample_weight=None)
+print("\nF1 score (F-measure) with 2nd segmentation: " +str(scnd_F1_score))
 #Save the results
 file_perf = open(path_experiment+'performances.txt', 'w')
-file_perf.write("Area under the ROC curve: "+str(AUC_ROC)
-                + "\nArea under Precision-Recall curve: " +str(AUC_prec_rec)
-                + "\nJaccard similarity score: " +str(jaccard_index)
-                + "\nF1 score (F-measure): " +str(F1_score)
-                +"\n\nConfusion matrix:"
-                +str(confusion)
-                +"\nACCURACY: " +str(accuracy)
-                +"\nSENSITIVITY: " +str(sensitivity)
-                +"\nSPECIFICITY: " +str(specificity)
-                +"\nPRECISION: " +str(precision)
+file_perf.write("Results using the first segmentation"
+                +"Area under the ROC curve: " + str(AUC_ROC)
+                + "\nArea under Precision-Recall curve: " + str(AUC_prec_rec)
+                + "\nJaccard similarity score: " + str(jaccard_index)
+                + "\nDice similarity score: " + str(dice_coefficient)
+                + "\nF1 score (F-measure): " + str(F1_score)
+                +"\n\nConfusion matrix:"+ str(confusion)
+                +"\nACCURACY: " + str(accuracy)
+                +"\nSENSITIVITY: " + str(sensitivity)
+                +"\nSPECIFICITY: " + str(specificity)
+                +"\nPRECISION: " + str(precision)
+                )
+file_perf.close()
+# Save results for the second manual set as well
+file_perf = open(path_experiment+'performances_second_segmentation.txt', 'w')
+file_perf.write("\Results using the second segmentation"
+                +"Area under the ROC curve: " + str(scnd_AUC_ROC)
+                + "\nArea under Precision-Recall curve: " + str(scnd_AUC_prec_rec)
+                + "\nJaccard similarity score: " + str(scnd_jaccard_index)
+                + "\nDice similarity score: " + str(scnd_dice_coefficient)
+                + "\nF1 score (F-measure): " + str(scnd_F1_score)
+                +"\n\nConfusion matrix:"+ str(scnd_confusion)
+                +"\nACCURACY: " + str(scnd_accuracy)
+                +"\nSENSITIVITY: " + str(scnd_sensitivity)
+                +"\nSPECIFICITY: " + str(scnd_specificity)
+                +"\nPRECISION: " + str(scnd_precision)
                 )
 file_perf.close()

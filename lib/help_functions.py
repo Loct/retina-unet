@@ -1,5 +1,6 @@
 import h5py
 import numpy as np
+import cv2
 from PIL import Image
 from matplotlib import pyplot as plt
 
@@ -15,9 +16,19 @@ def write_hdf5(arr,outfile):
 def rgb2gray(rgb):
     assert (len(rgb.shape)==4)  #4D arrays
     assert (rgb.shape[1]==3)
-    bn_imgs = rgb[:,0,:,:]*0.299 + rgb[:,1,:,:]*0.587 + rgb[:,2,:,:]*0.114
+    #bn_imgs = rgb[:,0,:,:]*0.299 + rgb[:,1,:,:]*0.587 + rgb[:,2,:,:]*0.114
+    bn_imgs = rgb[:,1,:,:]  ##just using the green channel
     bn_imgs = np.reshape(bn_imgs,(rgb.shape[0],1,rgb.shape[2],rgb.shape[3]))
     return bn_imgs
+
+#convert RGB image into green channel
+'''def getgreen(rgb):
+    assert (len(rgb.shape)==4)  #4D arrays
+    assert (rgb.shape[1]==3)
+    b,g,r = cv2.split (data)
+    bn_imgs = g
+    return bn_imgs
+    '''
 
 #group a set of images row per columns
 def group_images(data,per_row):
@@ -85,7 +96,7 @@ def pred_to_imgs(pred, patch_height, patch_width, mode="original"):
                 else:
                     pred_images[i,pix]=0
     else:
-        print "mode " +str(mode) +" not recognized, it can be 'original' or 'threshold'"
+        print("mode " +str(mode) +" not recognized, it can be 'original' or 'threshold'")
         exit()
     pred_images = np.reshape(pred_images,(pred_images.shape[0],1, patch_height, patch_width))
     return pred_images

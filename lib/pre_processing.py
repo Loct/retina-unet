@@ -18,6 +18,8 @@ def my_PreProc(data):
     assert (data.shape[1]==3)  #Use the original images
     #black-white conversion
     train_imgs = rgb2gray(data)
+#     b,g,r = cv2.split (data)
+#     train_imgs = g
     #my preprocessing:
     train_imgs = dataset_normalized(train_imgs)
     train_imgs = clahe_equalized(train_imgs)
